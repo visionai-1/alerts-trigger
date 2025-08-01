@@ -20,9 +20,8 @@ export const ENV = {
     MONGO_DATABASE: process.env.MONGO_DATABASE,
 
     // API Configuration
-    WEATHER_API_BASE_URL: process.env.WEATHER_API_BASE_URL || 'http://localhost:3000/v1/weather',
-    ALERTS_API_BASE_URL: process.env.ALERTS_API_BASE_URL || 'http://localhost:3001/v1/alerts',
-
+    WEATHER_API_BASE_URL: process.env.WEATHER_API_BASE_URL || 'http://localhost:3000/',
+    ALERTS_API_BASE_URL: process.env.ALERTS_API_BASE_URL || 'http://localhost:3001/',
 
     // JWT Configuration
     JWT: {
@@ -37,4 +36,7 @@ export const ENV = {
         VERSION: process.env.SERVICE_VERSION || '1.0.0',
         ENVIRONMENT: process.env.SERVICE_ENVIRONMENT || process.env.NODE_ENV || 'development',
     },
+
+    // Cron Configuration
+    CRON_JOB_INTERVAL: process.env.CRON_JOB_INTERVAL || '*/10 * * * *', // Every 10 minutes by default
 } as const;
