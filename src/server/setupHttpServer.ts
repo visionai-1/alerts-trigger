@@ -101,7 +101,7 @@ export const startHttpServer = (app: Application): void => {
     });
 
     // Setup graceful shutdown
-    setupGracefulShutdown(server);
+    // setupGracefulShutdown(server);
 
     Logging.info('✅ HTTP server started successfully');
 };

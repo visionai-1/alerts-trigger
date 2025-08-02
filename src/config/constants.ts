@@ -13,7 +13,7 @@ export const ENV = {
     PORT: process.env.PORT || 3002,
 
     // Database Configuration
-    MONGODB_URI: process.env.MONGODB_URI,
+    MONGODB_URI: process.env.MONGODB_URI || `mongodb+srv://${process.env.MONGO_DB_USER}:${process.env.MONGO_DB_PASSWORD}@${process.env.MONGO_CLUSTER}/${process.env.MONGO_DATABASE}?retryWrites=true&w=majority`,
     MONGO_DB_USER: process.env.MONGO_DB_USER,
     MONGO_DB_PASSWORD: process.env.MONGO_DB_PASSWORD,
     MONGO_CLUSTER: process.env.MONGO_CLUSTER,

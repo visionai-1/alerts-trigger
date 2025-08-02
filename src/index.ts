@@ -1,52 +1,108 @@
 // ====================================
-// 🚀 MAIN SERVER APPLICATION
+// 🚀 ALERTS TRIGGER CRON SERVICE
 // ====================================
 
-import express from 'express';
+import * as cron from 'node-cron';
 import { Logging } from './utils/logging';
-
-// ====================================
-// 📦 IMPORT SETUP MODULES
-// ====================================
-
 import { connectDB } from './config/database';
-import { setupMiddleware } from './server/setupMiddleware';
-import { setupRoutes } from './server/setupRoutes';
-import { setupErrorHandling } from './server/setupErrorHandling';
-import { startHttpServer } from './server/setupHttpServer';
+import { runEvaluationCycle, getServiceStats } from './services/AlertsTriggerService';
+import { ENV } from './config/constants';
 
 // ====================================
-// 🎯 MAIN SERVER INITIALIZATION
+// 🎯 MAIN CRON SERVICE INITIALIZATION
 // ====================================
 
-const StartServer = async (): Promise<void> => {
+export function formatCronInterval(cron: string): string {
+  const [min, hour, dayOfMonth, month, dayOfWeek] = cron.trim().split(' ');
+
+  const isEveryX = (val: string) => val.startsWith('*/') && !isNaN(Number(val.slice(2)));
+
+  // Handle every X minutes
+  if (isEveryX(min) && hour === '*' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+    return `every ${min.slice(2)} minutes`;
+  }
+
+  // Handle every hour at specific minute
+  if (!isNaN(Number(min)) && hour === '*' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+    return `every hour at minute ${min}`;
+  }
+
+  // Handle daily at specific time
+  if (!isNaN(Number(min)) && !isNaN(Number(hour)) && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+    return `every day at ${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+  }
+
+  // Handle weekly at specific day and time
+  if (!isNaN(Number(min)) && !isNaN(Number(hour)) && dayOfMonth === '*' && month === '*' && dayOfWeek !== '*') {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayName = days[parseInt(dayOfWeek, 10)] ?? `day ${dayOfWeek}`;
+    return `every ${dayName} at ${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+  }
+
+  return `cron schedule: ${cron}`;
+}
+
+
+const StartCronService = async (): Promise<void> => {
     try {
-        Logging.info('🚀 Starting server initialization...');
+        Logging.info('🚀 Starting Alerts Trigger Cron Service...');
 
-        // Step 1: Initialize database connection (makes global DB const available)
+        // Step 1: Initialize database connection
         Logging.info('📚 Initializing database connection...');
         await connectDB();
-        Logging.info('✅ Database connected - Global DB instance ready for services');
+        Logging.info('✅ Database connected successfully');
 
-        // Step 2: Create Express application
-        const app = express();
+        // Step 2: Initial health check will be performed during first evaluation cycle
+        Logging.info('⏭️ Skipping initial health check - will be performed during evaluation cycle');
 
-        // Step 3: Setup middleware (Security, CORS, Body parsing, etc.)
-        setupMiddleware(app);
+        // Step 3: Setup cron job to run every 10 minutes
+        Logging.info(`⏰ Setting up cron job to run every ${formatCronInterval(ENV.CRON_JOB_INTERVAL)}...`);
+        
+        cron.schedule(ENV.CRON_JOB_INTERVAL, async () => {
+            const timestamp = new Date().toISOString();
+            Logging.info(`🕐 [${timestamp}] Cron job triggered - Starting alert evaluation cycle`);
+            
+            try {
+                await runEvaluationCycle();
+                Logging.info(`✅ [${timestamp}] Alert evaluation cycle completed successfully`);
+            } catch (error) {
+                Logging.error(`💥 [${timestamp}] Alert evaluation cycle failed`, {
+                    error: error.message,
+                    stack: error.stack
+                });
+            }
+        }, {
+            scheduled: true,
+            timezone: "UTC"
+        });
 
-        // Step 4: Setup routes (API, Health checks, Root)
-        setupRoutes(app);
+        // Step 4: Run initial evaluation cycle immediately
+        Logging.info('🔄 Running initial alert evaluation cycle...');
+        try {
+            await runEvaluationCycle();
+            Logging.info('✅ Initial alert evaluation cycle completed');
+        } catch (error) {
+            Logging.error('💥 Initial alert evaluation cycle failed', {
+                error: error.message
+            });
+        }
 
-        // Step 5: Setup error handling (404, Global errors, Process errors)
-        setupErrorHandling(app);
+        Logging.info('🎉 Alerts Trigger Cron Service started successfully');
+        Logging.info('📅 Service will evaluate alerts every 10 minutes');
+        
+        // Keep the process alive
+        process.on('SIGINT', () => {
+            Logging.info('👋 Received SIGINT, shutting down gracefully...');
+            process.exit(0);
+        });
 
-        // Step 6: Start HTTP server
-        startHttpServer(app);
-
-        Logging.info('🎉 Server initialization completed successfully');
+        process.on('SIGTERM', () => {
+            Logging.info('👋 Received SIGTERM, shutting down gracefully...');
+            process.exit(0);
+        });
 
     } catch (error) {
-        Logging.error('💥 Failed to start server', { 
+        Logging.error('💥 Failed to start Alerts Trigger Cron Service', { 
             error: error.message,
             stack: error.stack 
         });
@@ -58,5 +114,14 @@ const StartServer = async (): Promise<void> => {
 // 🚀 APPLICATION ENTRY POINT
 // ====================================
 
-// Start the server
-StartServer();
+// Log service information
+Logging.info('🏷️ Service Information', {
+    name: ENV.SERVICE.NAME,
+    version: ENV.SERVICE.VERSION,
+    environment: ENV.SERVICE.ENVIRONMENT,
+    alertsApiUrl: ENV.ALERTS_API_BASE_URL,
+    weatherApiUrl: ENV.WEATHER_API_BASE_URL
+});
+
+// Start the cron service
+StartCronService();
