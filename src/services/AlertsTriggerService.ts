@@ -63,6 +63,12 @@ const fetchWeatherDataForLocations = async (
 
         // Get location from first alert (all alerts in group have same location)
         const sampleAlert = locationAlerts[0];
+
+        if (!sampleAlert) {
+            Logging.warn(`⚠️ No sample alert found for location: ${locationKey}`);
+            continue;
+        }
+
         const location = sampleAlert.location;
 
         // Create promises for needed weather data types
@@ -70,6 +76,11 @@ const fetchWeatherDataForLocations = async (
             const realtimePromise = getRealTimeWeather(location)
                 .then(data => {
                     // Store with type prefix for realtime
+                    if (weatherDataMap.has(`realtime:${locationKey}`)) {
+                        Logging.warn(`⚠️ Realtime data already exists for location: ${locationKey}`);
+                        return;
+                    }
+                    
                     weatherDataMap.set(`realtime:${locationKey}`, data);
                     Logging.info(`✅ Fetched realtime weather for location: ${locationKey}`);
                 })
@@ -79,20 +90,24 @@ const fetchWeatherDataForLocations = async (
                         location
                     });
                 });
-            
+
             fetchPromises.push(realtimePromise);
         }
 
         if (needsForecast) {
             // For forecast alerts, use the timestep from the alert
             const forecastAlerts = locationAlerts.filter(alert => alert.type === 'forecast');
-            
+
             // Group forecast alerts by timestep
             const timesteps = new Set(forecastAlerts.map(alert => alert.timestep || '1h'));
-            
+
             for (const timestep of timesteps) {
                 const forecastPromise = getForecastWeather(location, timestep as '1h' | '1d')
                     .then(data => {
+                        if (weatherDataMap.has(`forecast:${timestep}:${locationKey}`)) {
+                            Logging.warn(`⚠️ Forecast data already exists for location: ${locationKey} and timestep: ${timestep}`);
+                            return;
+                        }
                         // Store with type and timestep prefix for forecast
                         weatherDataMap.set(`forecast:${timestep}:${locationKey}`, data);
                         Logging.info(`✅ Fetched ${timestep} forecast for location: ${locationKey}`);
@@ -104,7 +119,7 @@ const fetchWeatherDataForLocations = async (
                             timestep
                         });
                     });
-                
+
                 fetchPromises.push(forecastPromise);
             }
         }
@@ -161,7 +176,7 @@ const updateAlertStates = async (
             error: error.message,
             total: updates.length
         });
-        
+
         // Fallback to individual updates if batch fails
         Logging.info('🔄 Falling back to individual alert updates...');
         await updateAlertStatesIndividually(evaluationResults);
@@ -195,7 +210,7 @@ const updateAlertStatesIndividually = async (
                     newState
                 });
             });
-        
+
         updatePromises.push(updatePromise);
     }
 
@@ -218,7 +233,7 @@ const updateAlertStatesIndividually = async (
  */
 export const runEvaluationCycle = async (): Promise<void> => {
     const startTime = Date.now();
-    
+
     try {
         Logging.info('🚀 Starting alert evaluation cycle...');
 
@@ -227,7 +242,7 @@ export const runEvaluationCycle = async (): Promise<void> => {
 
         // Step 2: Fetch all alerts
         const alerts = await fetchAllAlerts();
-        
+
         if (alerts.length === 0) {
             Logging.info('ℹ️ No alerts found to evaluate');
             return;
@@ -258,7 +273,7 @@ export const runEvaluationCycle = async (): Promise<void> => {
     } catch (error) {
         const endTime = Date.now();
         const duration = endTime - startTime;
-        
+
         Logging.error('💥 Alert evaluation cycle failed', {
             error: error.message,
             duration: `${duration}ms`,
