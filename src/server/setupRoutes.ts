@@ -6,18 +6,7 @@ import { Application } from 'express';
 import mongoose from 'mongoose';
 import { Logging } from '../utils/logging';
 import { ENV } from '../config/constants';
-import { router as routes } from '../routes/v1/index.route';
 
-
-export const setupApiRoutes = (app: Application): void => {
-    // Configure API routes
-    app.use('/api/v1', routes);
-    // Removed detailed startup log
-};
-
-// ====================================
-// ❤️ HEALTH CHECK ROUTES
-// ====================================
 
 export const setupHealthCheck = (app: Application): void => {
     // Health check endpoint
@@ -25,7 +14,7 @@ export const setupHealthCheck = (app: Application): void => {
         try {
             // Check database connection
             await mongoose.connection.db.admin().ping();
-            
+
             const healthStatus = {
                 status: 'healthy',
                 timestamp: new Date().toISOString(),
@@ -37,7 +26,7 @@ export const setupHealthCheck = (app: Application): void => {
                     total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + ' MB'
                 }
             };
-            
+
             res.status(200).json(healthStatus);
         } catch (error) {
             res.status(503).json({
@@ -81,10 +70,8 @@ export const setupRootRoute = (app: Application): void => {
  */
 export const setupRoutes = (app: Application): void => {
     // Removed introductory log message
-    
-    setupApiRoutes(app);
     setupHealthCheck(app);
     setupRootRoute(app);
-    
+
     Logging.info('✅ All routes configured successfully');
 };

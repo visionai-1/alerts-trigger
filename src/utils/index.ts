@@ -22,7 +22,6 @@ export type {
     JWTOptions,
     DecodedToken,
     User,
-    AuthResponse,
     ApiResponse,
     TokenValidationResult,
     PaginationOptions,
