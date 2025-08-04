@@ -83,6 +83,56 @@ export const getAllAlerts = (): Promise<WeatherAlert[]> => {
 };
 
 /**
+ * Fetch all not-triggered alerts from alerts-service without pagination
+ */
+export const getNotTriggeredAlerts = (queryParams?: {
+    type?: 'realtime' | 'forecast';
+    parameter?: string;
+    sortBy?: 'createdAt' | 'name' | 'parameter' | 'lastState';
+    sortOrder?: 'asc' | 'desc';
+}): Promise<WeatherAlert[]> => {
+    Logging.info('🔍 Fetching all not-triggered alerts from alerts-service...');
+    
+    // Build query parameters - no pagination, just filtering
+    const params = new URLSearchParams({
+        lastState: 'not_triggered',
+        sortBy: queryParams?.sortBy || 'createdAt',
+        sortOrder: queryParams?.sortOrder || 'desc'
+    });
+
+    // Add optional parameters
+    if (queryParams?.type) {
+        params.append('type', queryParams.type);
+    }
+    if (queryParams?.parameter) {
+        params.append('parameter', queryParams.parameter);
+    }
+
+    const queryString = params.toString();
+    
+    return apiClient.get(`${ALERTS_API_PROTOCOL}/alerts?${queryString}`)
+        .then(response => {
+            if (response.data.success && Array.isArray(response.data.data)) {
+                Logging.info(`✅ Successfully fetched ${response.data.data.length} not-triggered alerts (all from database)`);
+                return response.data.data;
+            } else {
+                Logging.warn('⚠️ Unexpected response format from alerts-service', {
+                    response: response.data
+                });
+                return [];
+            }
+        })
+        .catch(error => {
+            Logging.error('💥 Failed to fetch not-triggered alerts from alerts-service', {
+                error: error.message,
+                baseURL: ENV.ALERTS_API_BASE_URL,
+                queryParams
+            });
+            throw new Error(`Failed to fetch not-triggered alerts: ${error.message}`);
+        });
+};
+
+/**
  * Update alert state in alerts-service using promise chains
  */
 export const updateAlertState = async (alertId: string, newState: 'triggered' | 'not_triggered'): Promise<boolean> => {

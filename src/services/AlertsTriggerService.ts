@@ -1,5 +1,5 @@
 import { WeatherData, ForecastData, WeatherAlert } from '../interfaces/weather';
-import { getAllAlerts, updateAlertState, updateMultiAlerts, checkAlertsServiceHealth, AlertStateUpdate } from './apis/AlertsApiService';
+import { getNotTriggeredAlerts, updateAlertState, updateMultiAlerts, checkAlertsServiceHealth, AlertStateUpdate } from './apis/AlertsApiService';
 import { getRealTimeWeather, getForecastWeather, checkWeatherApiHealth } from './apis/WeatherApiService';
 import { evaluateAlerts, groupAlertsByLocation } from './AlertEvaluationService';
 import { Logging } from '../utils/logging';
@@ -32,16 +32,19 @@ const performHealthChecks = async (): Promise<void> => {
 };
 
 /**
- * Fetch all alerts from alerts-service
+ * Fetch all not-triggered alerts from alerts-service
  */
-const fetchAllAlerts = async (): Promise<WeatherAlert[]> => {
+const fetchNotTriggeredAlerts = async (): Promise<WeatherAlert[]> => {
     try {
-        const alerts = await getAllAlerts();
-        Logging.info(`📋 Fetched ${alerts.length} alerts to evaluate`);
+        const alerts = await getNotTriggeredAlerts({
+            sortBy: 'createdAt',
+            sortOrder: 'desc'
+        });
+        Logging.info(`📋 Fetched ${alerts.length} not-triggered alerts to evaluate (all from database)`);
         return alerts;
     } catch (error) {
-        Logging.error('💥 Failed to fetch alerts', { error: error.message });
-        throw new Error(`Failed to fetch alerts: ${error.message}`);
+        Logging.error('💥 Failed to fetch not-triggered alerts', { error: error.message });
+        throw new Error(`Failed to fetch not-triggered alerts: ${error.message}`);
     }
 };
 
@@ -134,6 +137,7 @@ const fetchWeatherDataForLocations = async (
 
 /**
  * Update alert states in alerts-service using batch update
+ * Only updates alerts that should be triggered (from not_triggered to triggered)
  */
 const updateAlertStates = async (
     evaluationResults: Map<string, 'triggered' | 'not_triggered'>
@@ -143,19 +147,24 @@ const updateAlertStates = async (
         return;
     }
 
-    // Prepare batch update payload
-    const updates: AlertStateUpdate[] = Array.from(evaluationResults.entries()).map(
-        ([alertId, newState]) => ({ alertId, newState })
-    );
+    // Filter only alerts that should be triggered (transition from not_triggered to triggered)
+    const triggeredAlerts = Array.from(evaluationResults.entries())
+        .filter(([alertId, newState]) => newState === 'triggered')
+        .map(([alertId, newState]) => ({ alertId, newState }));
 
-    Logging.info(`🔄 Batch updating states for ${updates.length} alerts...`);
+    if (triggeredAlerts.length === 0) {
+        Logging.info('ℹ️ No alerts need to be triggered');
+        return;
+    }
+
+    Logging.info(`🔄 Batch updating ${triggeredAlerts.length} alerts to triggered state...`);
 
     try {
-        const result = await updateMultiAlerts(updates);
+        const result = await updateMultiAlerts(triggeredAlerts);
 
         if (result.success) {
             Logging.info(`✅ Batch alert state update completed`, {
-                total: updates.length,
+                total: triggeredAlerts.length,
                 successful: result.successfulUpdates.length,
                 failed: result.failedUpdates.length
             });
@@ -167,14 +176,14 @@ const updateAlertStates = async (
             }
         } else {
             Logging.error('💥 Batch alert state update failed completely', {
-                total: updates.length,
+                total: triggeredAlerts.length,
                 failedAlertIds: result.failedUpdates
             });
         }
     } catch (error) {
         Logging.error('💥 Failed to execute batch alert state update', {
             error: error.message,
-            total: updates.length
+            total: triggeredAlerts.length
         });
 
         // Fallback to individual updates if batch fails
@@ -185,15 +194,25 @@ const updateAlertStates = async (
 
 /**
  * Fallback function for individual alert updates
+ * Only updates alerts that should be triggered
  */
 const updateAlertStatesIndividually = async (
     evaluationResults: Map<string, 'triggered' | 'not_triggered'>
 ): Promise<void> => {
+    // Filter only alerts that should be triggered
+    const triggeredAlerts = Array.from(evaluationResults.entries())
+        .filter(([alertId, newState]) => newState === 'triggered');
+
+    if (triggeredAlerts.length === 0) {
+        Logging.info('ℹ️ No alerts need to be triggered (individual fallback)');
+        return;
+    }
+
     const updatePromises: Promise<void>[] = [];
     let successCount = 0;
     let failureCount = 0;
 
-    for (const [alertId, newState] of evaluationResults) {
+    for (const [alertId, newState] of triggeredAlerts) {
         const updatePromise = updateAlertState(alertId, newState)
             .then(success => {
                 if (success) {
@@ -218,7 +237,7 @@ const updateAlertStatesIndividually = async (
     await Promise.allSettled(updatePromises);
 
     Logging.info(`✅ Individual alert state updates completed`, {
-        total: evaluationResults.size,
+        total: triggeredAlerts.length,
         successful: successCount,
         failed: failureCount
     });
@@ -235,13 +254,13 @@ export const runEvaluationCycle = async (): Promise<void> => {
     const startTime = Date.now();
 
     try {
-        Logging.info('🚀 Starting alert evaluation cycle...');
+        Logging.info('🚀 Starting not-triggered alert evaluation cycle...');
 
         // Step 1: Health checks
         await performHealthChecks();
 
-        // Step 2: Fetch all alerts
-        const alerts = await fetchAllAlerts();
+        // Step 2: Fetch not-triggered alerts
+        const alerts = await fetchNotTriggeredAlerts();
 
         if (alerts.length === 0) {
             Logging.info('ℹ️ No alerts found to evaluate');
@@ -263,11 +282,14 @@ export const runEvaluationCycle = async (): Promise<void> => {
         const endTime = Date.now();
         const duration = endTime - startTime;
 
+        const triggeredCount = Array.from(evaluationResults.values()).filter(r => r === 'triggered').length;
+        
         Logging.info('✅ Alert evaluation cycle completed successfully', {
-            totalAlerts: alerts.length,
+            totalNotTriggeredAlerts: alerts.length,
             uniqueLocations: alertsByLocation.size,
             duration: `${duration}ms`,
-            triggered: Array.from(evaluationResults.values()).filter(r => r === 'triggered').length
+            newlyTriggered: triggeredCount,
+            successRate: alerts.length > 0 ? `${Math.round((triggeredCount / alerts.length) * 100)}%` : '0%'
         });
 
     } catch (error) {
