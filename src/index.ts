@@ -18,33 +18,33 @@ import { ENV } from './config/constants';
 // ====================================
 
 export function formatCronInterval(cron: string): string {
-  const [min, hour, dayOfMonth, month, dayOfWeek] = cron.trim().split(' ');
+    const [min, hour, dayOfMonth, month, dayOfWeek] = cron.trim().split(' ');
 
-  const isEveryX = (val: string) => val.startsWith('*/') && !isNaN(Number(val.slice(2)));
+    const isEveryX = (val: string) => val.startsWith('*/') && !isNaN(Number(val.slice(2)));
 
-  // Handle every X minutes
-  if (isEveryX(min) && hour === '*' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
-    return `every ${min.slice(2)} minutes`;
-  }
+    // Handle every X minutes
+    if (isEveryX(min) && hour === '*' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+        return `every ${min.slice(2)} minutes`;
+    }
 
-  // Handle every hour at specific minute
-  if (!isNaN(Number(min)) && hour === '*' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
-    return `every hour at minute ${min}`;
-  }
+    // Handle every hour at specific minute
+    if (!isNaN(Number(min)) && hour === '*' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+        return `every hour at minute ${min}`;
+    }
 
-  // Handle daily at specific time
-  if (!isNaN(Number(min)) && !isNaN(Number(hour)) && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
-    return `every day at ${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-  }
+    // Handle daily at specific time
+    if (!isNaN(Number(min)) && !isNaN(Number(hour)) && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+        return `every day at ${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+    }
 
-  // Handle weekly at specific day and time
-  if (!isNaN(Number(min)) && !isNaN(Number(hour)) && dayOfMonth === '*' && month === '*' && dayOfWeek !== '*') {
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const dayName = days[parseInt(dayOfWeek, 10)] ?? `day ${dayOfWeek}`;
-    return `every ${dayName} at ${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-  }
+    // Handle weekly at specific day and time
+    if (!isNaN(Number(min)) && !isNaN(Number(hour)) && dayOfMonth === '*' && month === '*' && dayOfWeek !== '*') {
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const dayName = days[parseInt(dayOfWeek, 10)] ?? `day ${dayOfWeek}`;
+        return `every ${dayName} at ${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+    }
 
-  return `cron schedule: ${cron}`;
+    return `cron schedule: ${cron}`;
 }
 
 // ====================================
@@ -53,11 +53,12 @@ export function formatCronInterval(cron: string): string {
 
 const setupCronJob = (): void => {
     Logging.info(`⏰ Setting up cron job to run ${formatCronInterval(ENV.CRON_JOB_INTERVAL)}...`);
-    
-    cron.schedule(ENV.CRON_JOB_INTERVAL, async () => {
+
+    // Create the cron job that will run every 10 minutes
+    const cronJob = cron.schedule(ENV.CRON_JOB_INTERVAL, async () => {
         const timestamp = new Date().toISOString();
         Logging.info(`🕐 [${timestamp}] Cron job triggered - Starting alert evaluation cycle`);
-        
+
         try {
             await runEvaluationCycle();
             Logging.info(`✅ [${timestamp}] Alert evaluation cycle completed successfully`);
@@ -68,11 +69,13 @@ const setupCronJob = (): void => {
             });
         }
     }, {
-        scheduled: true,
+        scheduled: true, // Don't start immediately, we'll start it manually
         timezone: "UTC"
     });
 
-    Logging.info('✅ Cron job scheduled successfully');
+    // Start the cron job immediately
+    cronJob.start();
+    Logging.info('✅ Cron job started immediately and will continue every 10 minutes');
 };
 
 // ====================================
@@ -112,25 +115,28 @@ const StartWebServer = async (): Promise<void> => {
         const app = createExpressApp();
         Logging.info('✅ Express application configured');
 
-        // Step 3: Setup cron job
-        setupCronJob();
-
-        // Step 4: Start HTTP server
+        // Step 3: Start HTTP server
         startHttpServer(app);
 
-        // Step 5: Run initial evaluation cycle
-        Logging.info('🔄 Running initial alert evaluation cycle...');
+        // Step 4: Setup cron job (will run immediately and then every 10 minutes)
+
+        const timestamp = new Date().toISOString();
+        Logging.info(`🕐 [${timestamp}] Cron job triggered - Starting alert evaluation cycle`);
+
         try {
             await runEvaluationCycle();
-            Logging.info('✅ Initial alert evaluation cycle completed');
+            Logging.info(`✅ [${timestamp}] Alert evaluation cycle completed successfully`);
         } catch (error) {
-            Logging.error('💥 Initial alert evaluation cycle failed', {
-                error: error.message
+            Logging.error(`💥 [${timestamp}] Alert evaluation cycle failed`, {
+                error: error.message,
+                stack: error.stack
             });
         }
+        
+        setupCronJob();
 
         Logging.info('🎉 Alerts Trigger Web Server started successfully');
-        Logging.info('📅 Service will evaluate alerts every 10 minutes');
+        Logging.info('📅 Cron job is running and will evaluate alerts every 10 minutes');
         Logging.info('🌐 Web server is running and ready for deployment');
 
         // Keep the process alive
@@ -145,9 +151,9 @@ const StartWebServer = async (): Promise<void> => {
         });
 
     } catch (error) {
-        Logging.error('💥 Failed to start Alerts Trigger Web Server', { 
+        Logging.error('💥 Failed to start Alerts Trigger Web Server', {
             error: error.message,
-            stack: error.stack 
+            stack: error.stack
         });
         process.exit(1);
     }
