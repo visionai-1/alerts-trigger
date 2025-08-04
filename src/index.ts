@@ -1,15 +1,20 @@
 // ====================================
-// 🚀 ALERTS TRIGGER CRON SERVICE
+// 🚀 ALERTS TRIGGER WEB SERVER
 // ====================================
 
+import express, { Application } from 'express';
 import * as cron from 'node-cron';
 import { Logging } from './utils/logging';
 import { connectDB } from './config/database';
 import { runEvaluationCycle, getServiceStats } from './services/AlertsTriggerService';
+import { setupMiddleware } from './server/setupMiddleware';
+import { setupRoutes } from './server/setupRoutes';
+import { setupErrorHandling } from './server/setupErrorHandling';
+import { startHttpServer } from './server/setupHttpServer';
 import { ENV } from './config/constants';
 
 // ====================================
-// 🎯 MAIN CRON SERVICE INITIALIZATION
+// 🎯 CRON UTILITY FUNCTIONS
 // ====================================
 
 export function formatCronInterval(cron: string): string {
@@ -42,41 +47,78 @@ export function formatCronInterval(cron: string): string {
   return `cron schedule: ${cron}`;
 }
 
+// ====================================
+// 🔄 CRON JOB SETUP
+// ====================================
 
-const StartCronService = async (): Promise<void> => {
+const setupCronJob = (): void => {
+    Logging.info(`⏰ Setting up cron job to run ${formatCronInterval(ENV.CRON_JOB_INTERVAL)}...`);
+    
+    cron.schedule(ENV.CRON_JOB_INTERVAL, async () => {
+        const timestamp = new Date().toISOString();
+        Logging.info(`🕐 [${timestamp}] Cron job triggered - Starting alert evaluation cycle`);
+        
+        try {
+            await runEvaluationCycle();
+            Logging.info(`✅ [${timestamp}] Alert evaluation cycle completed successfully`);
+        } catch (error) {
+            Logging.error(`💥 [${timestamp}] Alert evaluation cycle failed`, {
+                error: error.message,
+                stack: error.stack
+            });
+        }
+    }, {
+        scheduled: true,
+        timezone: "UTC"
+    });
+
+    Logging.info('✅ Cron job scheduled successfully');
+};
+
+// ====================================
+// 🚀 WEB SERVER SETUP
+// ====================================
+
+const createExpressApp = (): Application => {
+    const app = express();
+
+    // Setup middleware
+    setupMiddleware(app);
+
+    // Setup routes
+    setupRoutes(app);
+
+    // Setup error handling (must be last)
+    setupErrorHandling(app);
+
+    return app;
+};
+
+// ====================================
+// 🎯 MAIN APPLICATION STARTUP
+// ====================================
+
+const StartWebServer = async (): Promise<void> => {
     try {
-        Logging.info('🚀 Starting Alerts Trigger Cron Service...');
+        Logging.info('🚀 Starting Alerts Trigger Web Server...');
 
         // Step 1: Initialize database connection
         Logging.info('📚 Initializing database connection...');
         await connectDB();
         Logging.info('✅ Database connected successfully');
 
-        // Step 2: Initial health check will be performed during first evaluation cycle
-        Logging.info('⏭️ Skipping initial health check - will be performed during evaluation cycle');
+        // Step 2: Create Express application
+        Logging.info('🔧 Setting up Express application...');
+        const app = createExpressApp();
+        Logging.info('✅ Express application configured');
 
-        // Step 3: Setup cron job to run every 10 minutes
-        Logging.info(`⏰ Setting up cron job to run every ${formatCronInterval(ENV.CRON_JOB_INTERVAL)}...`);
-        
-        cron.schedule(ENV.CRON_JOB_INTERVAL, async () => {
-            const timestamp = new Date().toISOString();
-            Logging.info(`🕐 [${timestamp}] Cron job triggered - Starting alert evaluation cycle`);
-            
-            try {
-                await runEvaluationCycle();
-                Logging.info(`✅ [${timestamp}] Alert evaluation cycle completed successfully`);
-            } catch (error) {
-                Logging.error(`💥 [${timestamp}] Alert evaluation cycle failed`, {
-                    error: error.message,
-                    stack: error.stack
-                });
-            }
-        }, {
-            scheduled: true,
-            timezone: "UTC"
-        });
+        // Step 3: Setup cron job
+        setupCronJob();
 
-        // Step 4: Run initial evaluation cycle immediately
+        // Step 4: Start HTTP server
+        startHttpServer(app);
+
+        // Step 5: Run initial evaluation cycle
         Logging.info('🔄 Running initial alert evaluation cycle...');
         try {
             await runEvaluationCycle();
@@ -87,9 +129,10 @@ const StartCronService = async (): Promise<void> => {
             });
         }
 
-        Logging.info('🎉 Alerts Trigger Cron Service started successfully');
+        Logging.info('🎉 Alerts Trigger Web Server started successfully');
         Logging.info('📅 Service will evaluate alerts every 10 minutes');
-        
+        Logging.info('🌐 Web server is running and ready for deployment');
+
         // Keep the process alive
         process.on('SIGINT', () => {
             Logging.info('👋 Received SIGINT, shutting down gracefully...');
@@ -102,7 +145,7 @@ const StartCronService = async (): Promise<void> => {
         });
 
     } catch (error) {
-        Logging.error('💥 Failed to start Alerts Trigger Cron Service', { 
+        Logging.error('💥 Failed to start Alerts Trigger Web Server', { 
             error: error.message,
             stack: error.stack 
         });
@@ -119,9 +162,10 @@ Logging.info('🏷️ Service Information', {
     name: ENV.SERVICE.NAME,
     version: ENV.SERVICE.VERSION,
     environment: ENV.SERVICE.ENVIRONMENT,
+    port: ENV.PORT,
     alertsApiUrl: ENV.ALERTS_API_BASE_URL,
     weatherApiUrl: ENV.WEATHER_API_BASE_URL
 });
 
-// Start the cron service
-StartCronService();
+// Start the web server
+StartWebServer();

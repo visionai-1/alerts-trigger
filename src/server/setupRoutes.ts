@@ -6,7 +6,7 @@ import { Application } from 'express';
 import mongoose from 'mongoose';
 import { Logging } from '../utils/logging';
 import { ENV } from '../config/constants';
-
+import { router as apiRoutes } from '../routes/v1/index.route';
 
 export const setupHealthCheck = (app: Application): void => {
     // Health check endpoint
@@ -47,7 +47,7 @@ export const setupRootRoute = (app: Application): void => {
     // Root endpoint
     app.get('/', (req, res) => {
         res.json({
-            message: 'Tomorrow.io Weather API',
+            message: 'Alerts Trigger Service',
             version: '1.0.0',
             environment: ENV.NODE_ENV,
             timestamp: new Date().toISOString(),
@@ -72,6 +72,9 @@ export const setupRoutes = (app: Application): void => {
     // Removed introductory log message
     setupHealthCheck(app);
     setupRootRoute(app);
+
+    // Mount API routes
+    app.use('/api/v1', apiRoutes);
 
     Logging.info('✅ All routes configured successfully');
 };
