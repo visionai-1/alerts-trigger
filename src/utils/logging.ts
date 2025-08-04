@@ -113,92 +113,71 @@ const createLogger = () => {
 
   const transports: winston.transport[] = [];
 
-  // Console transport - ALWAYS enabled for terminal display
-  // Enhanced for better visibility in terminal
-  if (!isProduction || isDefaultEnv) {
-    transports.push(
-      new winston.transports.Console({
-        level: 'debug',
-        handleExceptions: true,
-        handleRejections: true,
-        stderrLevels: ['error'],
-        format: combine(
-          timestamp({ format: 'HH:mm:ss' }),
-          errors({ stack: true }),
-          splat(),
-          consoleFormat
-        ),
-      })
-    );
-  } else {
-    // Production console transport (structured but still visible)
-    transports.push(
-      new winston.transports.Console({
-        level: 'info',
-        handleExceptions: true,
-        handleRejections: true,
-        format: combine(
-          timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-          errors({ stack: true }),
-          printf(({ level, message, timestamp, stack, ...meta }) => {
-            const emoji = getLogEmoji(level);
-            const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
-            return `${emoji} [${timestamp}] ${level.toUpperCase()}: ${stack || message}${metaStr}`;
-          })
-        ),
-      })
-    );
-  }
+  // Console transport - ALWAYS enabled for terminal display with full logging
+  // Enhanced for better visibility in terminal (same for all environments)
+  transports.push(
+    new winston.transports.Console({
+      level: 'debug', // Show all logs including debug
+      handleExceptions: true,
+      handleRejections: true,
+      stderrLevels: ['error'],
+      format: combine(
+        timestamp({ format: 'HH:mm:ss' }),
+        errors({ stack: true }),
+        splat(),
+        consoleFormat
+      ),
+    })
+  );
 
-  // File transports for persistent logging (only in dev/prod environments)
-  if (isDevelopment || isProduction) {
-    // Error logs file
-    transports.push(
-      new winston.transports.File({
-        filename: 'logs/error.log',
-        level: 'error',
-        format: fileFormat,
-        maxsize: 5242880, // 5MB
-        maxFiles: 10,
-      })
-    );
+  // File transports for persistent logging (enabled in all environments)
+  // Error logs file
+  transports.push(
+    new winston.transports.File({
+      filename: 'logs/error.log',
+      level: 'error',
+      format: fileFormat,
+      maxsize: 5242880, // 5MB
+      maxFiles: 10,
+    })
+  );
 
-    // Combined logs file
-    transports.push(
-      new winston.transports.File({
-        filename: 'logs/combined.log',
-        format: fileFormat,
-        maxsize: 5242880, // 5MB
-        maxFiles: 10,
-      })
-    );
+  // Combined logs file (captures all logs)
+  transports.push(
+    new winston.transports.File({
+      filename: 'logs/combined.log',
+      level: 'debug', // Capture all logs including debug
+      format: fileFormat,
+      maxsize: 5242880, // 5MB
+      maxFiles: 10,
+    })
+  );
 
-    // HTTP logs file for API requests
-    transports.push(
-      new winston.transports.File({
-        filename: 'logs/http.log',
-        level: 'http',
-        format: fileFormat,
-        maxsize: 5242880, // 5MB
-        maxFiles: 5,
-      })
-    );
-  }
+  // HTTP logs file for API requests
+  transports.push(
+    new winston.transports.File({
+      filename: 'logs/http.log',
+      level: 'http',
+      format: fileFormat,
+      maxsize: 5242880, // 5MB
+      maxFiles: 5,
+    })
+  );
 
   return winston.createLogger({
-    level: isProduction ? 'info' : 'debug',
+    level: 'debug', // Show all logs in all environments
     defaultMeta: { 
-      service: 'node-typescript-boilerplate',
+      service: 'alerts-trigger',
       environment: process.env.NODE_ENV || 'development'
     },
     transports,
-    // Handle exceptions and rejections
-    exceptionHandlers: isProduction ? [
+    // Handle exceptions and rejections (enabled in all environments)
+    exceptionHandlers: [
       new winston.transports.File({ filename: 'logs/exceptions.log' })
-    ] : [],
-    rejectionHandlers: isProduction ? [
+    ],
+    rejectionHandlers: [
       new winston.transports.File({ filename: 'logs/rejections.log' })
-    ] : [],
+    ],
     exitOnError: false, // Don't exit on handled exceptions
   });
 };
